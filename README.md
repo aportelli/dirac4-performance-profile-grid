@@ -1,6 +1,6 @@
-# DiRAC 4 Performance profile
+# DiRAC 4 Performance Profile
 
-- Author(s): Antonin Portelli
+- Author(s): Antonin Portelli and Ryan Hill
 - Application: [Grid library](https://github.com/paboyle/Grid)
 - Related DiRAC project(s): DP391, DP392, DP393
 
@@ -21,7 +21,7 @@ gradient](https://en.wikipedia.org/wiki/Conjugate_gradient_method) algorithm. Th
 execution cost of algorithms of this class is generally dominated by multiplications with
 the matrix being inverted. In conclusion, lattice QCD applications are generally dominated
 by the cost of multiplying by a chosen Dirac operator, and therefore the implementation of
-such sparse matrix is one of the most performance-critical routines.
+such a sparse matrix is one of the most performance-critical routines.
 
 As an example, we provide the log of a production-scale time profile from one of the
 production applications used in the DP391 project. This application is based on the
@@ -30,7 +30,7 @@ of elementary operations called *modules*. Hadrons has an internal profiler whic
 for the total time spent in each executed module. The [full log](iblep.log) is available
 as part of this repository, and we summarise the relevant profiles below.
 
-The example job executed a total of 14974 modules, and the execution time per module type
+The example job executed a total of 14,974 modules, and the execution time per module type
 is given by
 ```plain
 Hadrons : Message  : 99225.948296 s : ................ Module type breakdown
@@ -63,7 +63,7 @@ discussion above.
 ## 2. Theoretical performance expectations
 For the sake of simplicity, we make the following assumptions here:
 - we will only consider the even-odd component of the domain-wall fermion (DWF) sparse
-  matrix, which is the main matrix used by DP391-DP393;
+  matrix, which is the main matrix used by DP391–DP393;
 - we assume FP32 (single precision) operations only (the dominant cost in production since
   most workflows use mixed-precision solvers);
 - we will assume each MPI process holds a local hypercubic four-dimensional volume with
@@ -117,14 +117,51 @@ in the bandwidth-bound regime of the roofline model. Specifically:
   $I_{\mathrm{MPI}}B_{\mathrm{net}}=9~\mathrm{TFlop}/\mathrm{s}$ per node.
 
 ## 3. Benchmark applications
-*Please provide references to the source code of benchmark applications measuring the
-performances figures described in Sec. 2.*
+The benchmark application is [available
+online](https://git.dev.dirac.ed.ac.uk/portelli/lattice-benchmarks) (in the `Grid`
+subdirectory). This benchmark is a fork of another [benchmark from the Grid
+repository](https://github.com/paboyle/Grid/blob/develop/benchmarks/Benchmark_ITT.cc). It
+is documented online. In summary, the measured metrics are:
+- Memory bandwidth in GB/s using the AXPY triad for various payload sizes. This is a
+baseline check which should reach the peak memory bandwidth ($B_{\mathrm{mem}}$ above) for
+large payloads, if the software is run with the appropriate runtime environment. To be
+specific, we are using the [STREAM counting
+convention](https://www.cs.virginia.edu/stream/ref.html), and at most 75% of the peak will
+be obtained on most contemporary systems due to write-allocate cache behaviour.
+- Bidirectional bandwidth in GB/s between MPI processes following the Cartesian pattern
+  used in halo exchanges. This is also a baseline check of the runtime environment. Under
+  nominal conditions, one should obtain close to the peak bidirectional bandwidth for
+  large payloads. If any link in the halo exchange goes across the network, the network
+  bandwidth will be measured by this benchmark.
+- Flop/s performance of three different lattice QCD sparse matrices, including the DWF matrix
+  discussed above, for various values of $N_L$.
+- **A single reference *comparison point***, typically used for procurement and
+  validation, which is currently the average of the $N_L=24$ and $N_L=32$ DWF
+  performances.
+
+Finally, all metrics are measured repeatedly after a warm-up sequence designed to
+eliminate cache effects. The standard deviation for each measurement is provided in the
+log to check the size of the fluctuation across results.
 
 ## 4. Example of benchmark result
-*Please provide examples of results obtained from the benchmark described in the previous
-section. These example are made to be representative of an environment suitable for
-production, and contributors should not hesitate to choose a favourite, well-known system
-to obtain these results. Please comment on how well the benchmark results match the
-theoretical expectations in Sec. 2. If large discrepancies are observed, please comment on
-your current understanding of the root cause, as well as resulting opportunities for
-future optimisation.*
+We present below example results of a 16-node (64 A100-80 GPUs) benchmark run on Tursa in
+October 2025. A full [log](BenchmarkN16.log) and [JSON output](BenchmarkResultsN16.json)
+can be found in the present repository.
+- For large payloads, a memory bandwidth of approximately $6500~\mathrm{GB}/\mathrm{s}$
+  per node is obtained, which represents $1625~\mathrm{GB}/\mathrm{s}$ per GPU. This is 80%
+  of the peak $B_{\mathrm{mem}}=2039~\mathrm{GB}/\mathrm{s}$, in good agreement with
+  expectations in the previous section.
+- For large payloads, a bidirectional bandwidth between MPI processes of approximately
+  - $172~\mathrm{GB}/\mathrm{s}$ aggregated per node for directions going through the
+    network, which is 86% of the peak bandwidth
+    $B_{\mathrm{net}}=200~\mathrm{GB}/\mathrm{s}$.
+  - $688~\mathrm{GB}/\mathrm{s}$ aggregated per node for directions internal to a node,
+    which is 15% above the NVLink peak $B_{\mathrm{NVLink}}=600~\mathrm{GB}/\mathrm{s}$.
+    The figure communicated by NVIDIA is for a pair of GPUs. Here, because of the
+    Cartesian pattern, all four GPUs exchange data in independent pairs, and higher bandwidth
+    can be achieved. Understanding precisely the bandwidth figure would require a more
+    low-level analysis of the activity of the independent NVLink links, which is out of
+    scope for this report (NVLink is not a bottleneck here).
+- For $N_L=24$, a DWF single-precision performance of $7.2~\mathrm{TFlop}/\mathrm{s}$ per
+node. This is 80% of the peak theoretical roofline performance of
+$9~\mathrm{TFlop}/\mathrm{s}$ derived in Sec. 2.
